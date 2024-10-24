@@ -15,12 +15,13 @@ mp_drawing_styles = mp.solutions.drawing_styles
 
 hands = mp_hands.Hands(static_image_mode=True, min_detection_confidence=0.8)
 
-labels_dict = {0: 'A', 1: 'B', 2: 'L'}
+labels_dict = {0: '5', 1: 'Hello'}
 while True:
 
     data_aux = []
     x_ = []
     y_ = []
+    z_ = []
 
     ret, frame = cap.read()
 
@@ -42,15 +43,19 @@ while True:
             for i in range(len(hand_landmarks.landmark)):
                 x = hand_landmarks.landmark[i].x
                 y = hand_landmarks.landmark[i].y
+                z = hand_landmarks.landmark[i].z
 
                 x_.append(x)
                 y_.append(y)
+                z_.append(z)
 
             for i in range(len(hand_landmarks.landmark)):
                 x = hand_landmarks.landmark[i].x
                 y = hand_landmarks.landmark[i].y
+                z = hand_landmarks.landmark[i].z
                 data_aux.append(x - min(x_))
                 data_aux.append(y - min(y_))
+                data_aux.append(z - min(z_))
 
         x1 = int(min(x_) * W) - 10
         y1 = int(min(y_) * H) - 10
