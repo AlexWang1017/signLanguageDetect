@@ -24,6 +24,7 @@ for dir_ in os.listdir(DATA_DIR):
 
         x_ = []
         y_ = []
+        z_ = []
 
         img = cv2.imread(os.path.join(DATA_DIR, dir_, img_path))
         img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -34,15 +35,18 @@ for dir_ in os.listdir(DATA_DIR):
                 for i in range(len(hand_landmarks.landmark)):
                     x = hand_landmarks.landmark[i].x
                     y = hand_landmarks.landmark[i].y
+                    z = hand_landmarks.landmark[i].z
 
                     x_.append(x)
                     y_.append(y)
+                    z_.append(z)
 
                 for i in range(len(hand_landmarks.landmark)):
                     x = hand_landmarks.landmark[i].x
                     y = hand_landmarks.landmark[i].y
                     data_aux.append(x - min(x_))
                     data_aux.append(y - min(y_))
+                    data_aux.append(z - min(z_))
 
             data.append(data_aux)
             labels.append(dir_)
