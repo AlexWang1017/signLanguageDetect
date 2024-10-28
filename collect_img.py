@@ -1,14 +1,13 @@
-import cv2
-import mediapipe as mp
-import numpy as np
-import time
 import os
+import cv2
+import numpy as np
+import mediapipe as mp
 
 # 配置参数
 DATA_DIR = './data'
 GESTURE_LABELS = {0: '5_Static', 1: 'Hello_Dynamic'}  # 手势标签
-FRAMES_PER_GESTURE = 60  # 每个手势采集的帧数，增加帧数以捕获动态手势
-FRAME_INTERVAL = 50  # 每帧间隔时间，单位为毫秒
+FRAMES_PER_GESTURE = 60  # 每个手势采集的帧数
+FRAME_INTERVAL = 30  # 每帧间隔时间，单位为毫秒
 gesture_id = 0  # 手势 ID，用于标记不同手势
 
 # 创建 MediaPipe Hands
@@ -17,7 +16,10 @@ hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_c
 
 # 初始化摄像头
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
+cv2.namedWindow('frame', cv2.WINDOW_NORMAL)  # 使用窗口模式
 print("按下空格键开始采集手势...")
 
 while True:
@@ -48,15 +50,19 @@ while True:
                     for landmark in hand_landmarks.landmark:
                         data.extend([landmark.x, landmark.y, landmark.z])
 
-            # 保存帧数据
-            data = np.array(data)
-            np.save(os.path.join(gesture_dir, f'{gesture_name}_{frame_id}.npy'), data)
+                # 确保 data 非空再进行保存
+                if data:
+                    data = np.array(data)
+                    np.save(os.path.join(gesture_dir, f'{gesture_name}_{frame_id}.npy'), data)
 
+            # 更新显示信息
             cv2.putText(frame, f'Collecting {gesture_name}: Frame {frame_id + 1}/{FRAMES_PER_GESTURE}',
                         (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.imshow('frame', frame)
 
-            cv2.waitKey(FRAME_INTERVAL)  # 每帧间隔
+            # 检查 'q' 键以中断采集
+            if cv2.waitKey(FRAME_INTERVAL) & 0xFF == ord('q'):
+                break
 
         print(f"手势 {gesture_name} 采集完成！")
         

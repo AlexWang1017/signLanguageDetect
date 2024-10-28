@@ -81,23 +81,24 @@ while True:
                 # 检查滑动窗口大小，确保满足模型输入要求
                 if len(window_data) == window_size:
                     # 将滑动窗口中的数据转为 numpy 数组
-                    input_data = np.array(window_data).reshape(1, window_size, features)
+                    input_data = np.array(window_data, dtype=np.float32).reshape(1, window_size, features)
+                    print(f"Input data shape: {input_data.shape}, data type: {input_data.dtype}")
 
                     # 动态检测逻辑：计算位置变化
                     movement = np.linalg.norm(np.array(data_aux) - np.array(previous_data))
-                    print(f"Movement detected: {movement}", flush=True)  # 调试输出，查看移动量
+                    print(f"Movement detected: {movement}", flush=True)  # 调试输出
 
                     if movement >= dynamic_threshold:
                         gesture_type = "Dynamic Gesture"
-                        # 进行预测
+                    # 进行预测
+                        input_data = np.array(window_data, dtype=np.float32).reshape(1, window_size, features)
                         prediction = model.predict(input_data)
                         predicted_label = np.argmax(prediction)
-                        buffered_gesture = labels_dict.get(predicted_label, "Hello Dynamic")
+                        buffered_gesture = labels_dict.get(predicted_label, "Unknown Gesture")
                     else:
                         gesture_type = "Static Gesture"
                         buffered_gesture = "5 Static"
-                    previous_data = data_aux  # 更新上一帧的数据
-
+                    previous_data = data_aux  
             # 重置 data_aux
             data_aux = []
 

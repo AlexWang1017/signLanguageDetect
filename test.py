@@ -1,12 +1,16 @@
-from keras.utils import to_categorical
-import numpy as np
+import cv2
 
-# 定义一个标签数组
-labels = np.array([0, 1, 2, 3])
+cap = cv2.VideoCapture(0)
 
-# 使用 to_categorical 将标签转换为 one-hot 编码
-one_hot_labels = to_categorical(labels)
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-# 输出结果
-print("Original labels:", labels)
-print("One-hot encoded labels:\n", one_hot_labels)
+    cv2.imshow('Test Frame', frame)
+
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
