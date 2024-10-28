@@ -2,9 +2,10 @@ import pickle
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
-from tensorflow.keras.utils import to_categorical
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
+from keras.utils import to_categorical
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Dropout
+import tensorflow as tf
 
 # 加载数据
 with open('data_with_velocity_acceleration.pickle', 'rb') as f:
@@ -19,8 +20,14 @@ label_encoder = LabelEncoder()
 labels_encoded = label_encoder.fit_transform(labels)
 labels_one_hot = to_categorical(labels_encoded)
 
-# 将数据重塑为 [samples, timesteps, features] 以适应 LSTM
+# 检查数据是否能按 (samples, timesteps, features) 进行重塑
 timesteps = 30  # 假设每个样本包含30帧
+if data.shape[1] % timesteps != 0:
+    print(f"数据列数 {data.shape[1]} 不能被 timesteps {timesteps} 整除，调整形状。")
+    # 如果不能整除，修剪数据以适应 timesteps
+    data = data[:, :-(data.shape[1] % timesteps)]
+
+# 确定特征数量
 features = data.shape[1] // timesteps
 data_reshaped = data.reshape(-1, timesteps, features)
 
