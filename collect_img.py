@@ -1,76 +1,80 @@
-import os
 import cv2
-import numpy as np
 import mediapipe as mp
+import os
+import numpy as np
 
-# 配置参数
-DATA_DIR = './data'
-GESTURE_LABELS = {0: '5_Static', 1: 'Hello_Dynamic'}  # 手势标签
-FRAMES_PER_GESTURE = 60  # 每个手势采集的帧数
-FRAME_INTERVAL = 30  # 每帧间隔时间，单位为毫秒
-gesture_id = 0  # 手势 ID，用于标记不同手势
+# Set up directories for saving images
+data_dir = '/mnt/data/dataset/'
+os.makedirs(data_dir, exist_ok=True)
+class_names = ['5', 'hello']
 
-# 创建 MediaPipe Hands
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.8)
+# Create subdirectories for each class
+for class_name in class_names:
+    class_path = os.path.join(data_dir, class_name)
+    os.makedirs(class_path, exist_ok=True)
 
-# 初始化摄像头
+# Initialize webcam
 cap = cv2.VideoCapture(0)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-cv2.namedWindow('frame', cv2.WINDOW_NORMAL)  # 使用窗口模式
-print("按下空格键开始采集手势...")
+if not cap.isOpened():
+    print("Error: Could not open webcam.")
+    exit()
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+# Parameters for collecting images
+num_images = 200  # Number of images per class
+image_size = (64, 64)  # Resize images to 64x64 pixels
 
-    # 等待用户按下空格键以开始采集手势数据
-    if cv2.waitKey(1) & 0xFF == ord(' '):
-        gesture_name = GESTURE_LABELS[gesture_id]
-        gesture_dir = os.path.join(DATA_DIR, gesture_name)
-        os.makedirs(gesture_dir, exist_ok=True)
-        
-        print(f"开始采集手势: {gesture_name}")
+# Initialize MediaPipe Hands
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
 
-        # 采集指定帧数
-        for frame_id in range(FRAMES_PER_GESTURE):
+with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.5) as hands:
+    for class_name in class_names:
+        print(f"Collecting images for class: {class_name}")
+        count = 0
+
+        while count < num_images:
             ret, frame = cap.read()
             if not ret:
+                print("Error: Failed to capture image.")
                 break
 
-            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            results = hands.process(frame_rgb)
+            # Flip the image horizontally for a selfie-view display
+            frame = cv2.flip(frame, 1)
 
-            data = []  # 存储关键点数据
+            # Convert the BGR image to RGB
+            image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
+            # Process the image and find hands
+            results = hands.process(image_rgb)
+
+            # Draw hand annotations on the image
+            frame.flags.writeable = True
             if results.multi_hand_landmarks:
                 for hand_landmarks in results.multi_hand_landmarks:
-                    for landmark in hand_landmarks.landmark:
-                        data.extend([landmark.x, landmark.y, landmark.z])
+                    mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-                # 确保 data 非空再进行保存
-                if data:
-                    data = np.array(data)
-                    np.save(os.path.join(gesture_dir, f'{gesture_name}_{frame_id}.npy'), data)
+            # Draw instructions on the frame
+            cv2.putText(frame, f"Class: {class_name}, Image: {count + 1}/{num_images}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+            cv2.imshow('Collecting Images', frame)
 
-            # 更新显示信息
-            cv2.putText(frame, f'Collecting {gesture_name}: Frame {frame_id + 1}/{FRAMES_PER_GESTURE}',
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-            cv2.imshow('frame', frame)
+            # Wait for user to press 's' to save the image
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('s') and results.multi_hand_landmarks:
+                # Resize and save the image
+                resized_frame = cv2.resize(frame, image_size)
+                save_path = os.path.join(data_dir, class_name, f"{count}.jpg")
+                cv2.imwrite(save_path, resized_frame)
+                count += 1
 
-            # 检查 'q' 键以中断采集
-            if cv2.waitKey(FRAME_INTERVAL) & 0xFF == ord('q'):
+            # Exit if 'q' is pressed
+            elif key == ord('q'):
                 break
 
-        print(f"手势 {gesture_name} 采集完成！")
-        
-        # 切换到下一个手势，循环标签
-        gesture_id = (gesture_id + 1) % len(GESTURE_LABELS)
+        if count < num_images:
+            print(f"Collection for class {class_name} was interrupted.")
+            break
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
-
+# Release resources
 cap.release()
 cv2.destroyAllWindows()

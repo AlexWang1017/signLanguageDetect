@@ -1,49 +1,60 @@
-import pickle
+# Import necessary libraries
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
-from keras.utils import to_categorical
-from keras.models import Sequential
-from keras.layers import LSTM, Dense, Dropout
 import tensorflow as tf
+from keras.models import Sequential
+from keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout, LSTM, TimeDistributed
+from keras.optimizers import Adam
+from sklearn.model_selection import train_test_split
+import os
 
-# 加载数据
-with open('data_with_velocity_acceleration.pickle', 'rb') as f:
-    data_dict = pickle.load(f)
+# Load data
+data_dir = '/mnt/data/dataset/'
+x_data = np.load(os.path.join(data_dir, 'x_data.npy'))
+y_data = np.load(os.path.join(data_dir, 'y_data.npy'))
 
-# 数据预处理
-data = np.asarray(data_dict['data'], dtype=np.float32)  # 确保为 float32 类型
-labels = np.asarray(data_dict['labels'])
+# Check and reshape data to ensure it has the right dimensions
+num_samples, height, width, channels = x_data.shape
+num_frames = 5  # Assuming each sequence contains 5 frames
 
-# 对标签进行编码
-label_encoder = LabelEncoder()
-labels_encoded = label_encoder.fit_transform(labels)
-labels_one_hot = to_categorical(labels_encoded).astype(np.float32)  # 转换为 float32 类型
+# Reshape x_data to have shape (num_sequences, num_frames, height, width, channels)
+x_data = x_data[:num_samples // num_frames * num_frames]  # Make num_samples divisible by num_frames
+x_data = x_data.reshape((num_samples // num_frames, num_frames, height, width, channels))
+y_data = y_data[:num_samples // num_frames]  # Adjust y_data length accordingly
 
-# 检查数据形状
-print(f"Data shape: {data.shape}")
-print(f"Labels shape: {labels_one_hot.shape}")
+# Split data into train and test sets
+x_train, x_test, y_train, y_test = train_test_split(x_data, y_data, test_size=0.2, random_state=42)
 
-# 数据集拆分
-x_train, x_test, y_train, y_test = train_test_split(data, labels_one_hot, test_size=0.2, shuffle=True, stratify=labels_encoded)
-
-# 创建 LSTM 模型
+# Define the CNN-RNN model
 model = Sequential()
-model.add(LSTM(64, return_sequences=True, input_shape=(data.shape[1], data.shape[2])))
-model.add(Dropout(0.3))
-model.add(LSTM(32))
-model.add(Dropout(0.3))
-model.add(Dense(len(label_encoder.classes_), activation='softmax'))
 
-# 编译模型
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+# TimeDistributed CNN
+model.add(TimeDistributed(Conv2D(32, (3, 3), activation='relu', padding='same'), input_shape=(x_train.shape[1], x_train.shape[2], x_train.shape[3], x_train.shape[4])))
+model.add(TimeDistributed(MaxPooling2D((2, 2))))
+model.add(TimeDistributed(Conv2D(64, (3, 3), activation='relu', padding='same')))
+model.add(TimeDistributed(MaxPooling2D((2, 2))))
+model.add(TimeDistributed(Flatten()))
 
-# 训练模型
-model.fit(x_train, y_train, epochs=50, batch_size=16, validation_data=(x_test, y_test))
+# LSTM Layer
+model.add(LSTM(50, return_sequences=False))
 
-# 评估模型
-loss, accuracy = model.evaluate(x_test, y_test)
-print(f'Test Accuracy: {accuracy * 100:.2f}%')
+# Fully connected layer
+model.add(Dense(64, activation='relu'))
+model.add(Dropout(0.5))
+model.add(Dense(2, activation='softmax'))  # Assuming 2 classes: '5' and 'hello'
 
-# 保存模型
-model.save('lstm_gesture_model.h5')
+# Compile the model
+optimizer = Adam(learning_rate=0.001)
+model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+
+# Train the model
+epochs = 20
+batch_size = 16
+model.fit(x_train, y_train, validation_data=(x_test, y_test), epochs=epochs, batch_size=batch_size)
+
+# Save the model
+model.save(os.path.join(data_dir, 'gesture_classifier.h5'))
+
+# Evaluate the model
+evaluation = model.evaluate(x_test, y_test)
+print(f"Test Accuracy: {evaluation[1] * 100:.2f}%")
+ 

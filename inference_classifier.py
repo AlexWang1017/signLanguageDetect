@@ -1,128 +1,87 @@
-import cv2
-import mediapipe as mp
 import numpy as np
-import time
+import cv2
+import os
+import tensorflow as tf
 from collections import deque
-from keras.models import load_model
+import mediapipe as mp
 
-# 加载模型
-model = load_model('lstm_gesture_model.h5')
+# Load the trained model
+data_dir = '/mnt/data/dataset/'
+model_path = os.path.join(data_dir, 'gesture_classifier.h5')
+model = tf.keras.models.load_model(model_path)
 
-# 初始化摄像头
+# Set up class names
+class_names = ['5', 'hello']
+
+# Initialize MediaPipe Hands
+mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
+
+# Initialize webcam
 cap = cv2.VideoCapture(0)
 
-# 初始化 MediaPipe
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(static_image_mode=False, min_detection_confidence=0.8)
+if not cap.isOpened():
+    print("Error: Could not open webcam.")
+    exit()
 
-# 定义标签字典
-labels_dict = {0: '5 Static', 1: 'Hello Dynamic'}
+# Parameters for inference
+image_size = (64, 64)  # Resize images to 64x64 pixels
+frame_buffer = deque(maxlen=5)  # Buffer to hold the last 5 frames
+previous_landmarks = None  # To store previous frame landmarks
 
-# 配置参数
-static_threshold = 0.02  # 降低静态手势的变化阈值
-dynamic_threshold = 0.03  # 降低动态手势检测的移动量阈值
-window_size = 30  # 滑动窗口的大小，包含30帧
-features = 3      # 每帧包含 x, y, z 三个特征
-movement=0
+with mp_hands.Hands(min_detection_confidence=0.7, min_tracking_confidence=0.5) as hands:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Error: Failed to capture image.")
+            break
 
-# 初始化滑动窗口
-window_data = deque(maxlen=window_size)  # 滑动窗口用于存储帧数据
-previous_data = None  # 保存上一帧数据
+        # Flip the image horizontally for a selfie-view display
+        frame = cv2.flip(frame, 1)
 
-while True:
-    data_aux = []
-    x_ = []
-    y_ = []
-    z_ = []
+        # Convert the BGR image to RGB
+        image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-    ret, frame = cap.read()
-    if not ret:
-        break
+        # Process the image and find hands
+        results = hands.process(image_rgb)
 
-    H, W, _ = frame.shape
-    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        # Draw hand annotations on the image
+        if results.multi_hand_landmarks:
+            for hand_landmarks in results.multi_hand_landmarks:
+                mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
-    # 处理当前帧
-    results = hands.process(frame_rgb)
-    gesture_type = "Unknown Gesture"
-    buffered_gesture = "5 Static"
+                # Extract landmarks as (x, y) tuples
+                current_landmarks = [(lm.x, lm.y) for lm in hand_landmarks.landmark]
 
-    if results.multi_hand_landmarks:
-        for hand_landmarks in results.multi_hand_landmarks:
-            mp.solutions.drawing_utils.draw_landmarks(
-                frame,
-                hand_landmarks,
-                mp_hands.HAND_CONNECTIONS,
-                mp.solutions.drawing_styles.get_default_hand_landmarks_style(),
-                mp.solutions.drawing_styles.get_default_hand_connections_style()
-            )
+                # Compare with previous landmarks to determine if there is movement
+                if previous_landmarks is not None:
+                    movement_detected = any(
+                        np.linalg.norm(np.array(current) - np.array(previous)) > 0.02
+                        for current, previous in zip(current_landmarks, previous_landmarks)
+                    )
+                else:
+                    movement_detected = False
 
-            # 获取手部关键点数据
-            for landmark in hand_landmarks.landmark:
-                x_.append(landmark.x)
-                y_.append(landmark.y)
-                z_.append(landmark.z)
+                # Update previous landmarks
+                previous_landmarks = current_landmarks
 
-            # 归一化关键点并添加到 data_aux
-            if x_ and y_ and z_:
-                for i in range(len(x_)):
-                    data_aux.append(x_[i] - min(x_))
-                    data_aux.append(y_[i] - min(y_))
-                    data_aux.append(z_[i])
+                # Determine the gesture based on movement
+                if movement_detected:
+                    predicted_label = 'hello'
+                else:
+                    predicted_label = '5'
 
-            # 添加到滑动窗口
-            if len(data_aux) == window_size * features:
-                window_data.append(data_aux)
+                # Display the prediction
+                cv2.putText(frame, f"Prediction: {predicted_label}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
-                # 确保 previous_data 已初始化
-                if previous_data is None:
-                    previous_data = np.zeros_like(data_aux)
+        # Show the frame
+        cv2.imshow('Gesture Recognition', frame)
 
-                # 检查滑动窗口大小，确保满足模型输入要求
-                if len(window_data) == window_size:
-                    # 将滑动窗口中的数据转为 numpy 数组
-                    input_data = np.array(window_data, dtype=np.float32).reshape(1, window_size, features)
-                    print(f"Input data shape: {input_data.shape}, data type: {input_data.dtype}")
+        # Exit if 'q' is pressed
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord('q'):
+            break
 
-                    # 动态检测逻辑：计算位置变化
-                    movement = np.linalg.norm(np.array(data_aux) - np.array(previous_data))
-                    print(f"Movement detected: {movement}", flush=True)  # 调试输出
-
-                    if movement >= dynamic_threshold:
-                        gesture_type = "Dynamic Gesture"
-                    # 进行预测
-                        input_data = np.array(window_data, dtype=np.float32).reshape(1, window_size, features)
-                        prediction = model.predict(input_data)
-                        predicted_label = np.argmax(prediction)
-                        buffered_gesture = labels_dict.get(predicted_label, "Unknown Gesture")
-                    else:
-                        gesture_type = "Static Gesture"
-                        buffered_gesture = "5 Static"
-                    previous_data = data_aux  
-            # 重置 data_aux
-            data_aux = []
-
-    # 显示结果在右上角
-    text = f"{gesture_type}: {buffered_gesture}"
-    text_size = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 1, 3)[0]
-    text_x = W - text_size[0] - 10
-    text_y = 30
-    movement_text = f"Movement: {movement:.4f}"
-
-    # 绘制背景矩形
-    cv2.rectangle(frame, (text_x - 10, text_y - text_size[1] - 10),
-                  (text_x + text_size[0] + 10, text_y + 10), (0, 0, 0), -1)
-    cv2.putText(frame, text, (text_x, text_y),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 3, cv2.LINE_AA)
-
-    # 显示窗口
-    cv2.imshow('frame', frame)
-
-    # 检查是否按下空格键退出
-    key = cv2.waitKey(10)
-    if key == 32:
-        break
-
+# Release resources
 cap.release()
 cv2.destroyAllWindows()
- 
